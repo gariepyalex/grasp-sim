@@ -75,8 +75,8 @@ def decode_grasp(header, line):
     return grasp
 
 
-def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
-                     spawn_headless, spawn_new_console):
+def spawn_simulation(port, vrep_path, scene_path, exit_on_stop, spawn_headless,
+                     spawn_new_console):
     """Spawns a child process using screen and starts a remote VREP server.
 
     Parameters
@@ -114,9 +114,9 @@ def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
         vrep_path = 'vrep.sh' if using_linux else 'vrep.exe'
 
         if find_executable(vrep_path) is None:
-            raise Exception('Cannot find %s in PATH to spawn a sim. '
-                            'Try specifying full path to executable. ' %
-                            vrep_path)
+            raise Exception(
+                'Cannot find %s in PATH to spawn a sim. '
+                'Try specifying full path to executable. ' % vrep_path)
 
     # Command to launch VREP
     headless_flag = '-h' if spawn_headless else ''
@@ -161,8 +161,14 @@ class SimulatorInterface(object):
     Here we'll mostly take advantage of mode (2).
     """
 
-    def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None,
-                 exit_on_stop=True, spawn_headless=True, spawn_new_console=True):
+    def __init__(self,
+                 port,
+                 ip='127.0.0.1',
+                 vrep_path=None,
+                 scene_path=None,
+                 exit_on_stop=True,
+                 spawn_headless=True,
+                 spawn_new_console=True):
 
         if not isinstance(port, int):
             raise Exception('Port <%s> must be of type <int>' % port)
@@ -213,17 +219,18 @@ class SimulatorInterface(object):
         vrep.simxClearStringSignal(self.clientID, 'pregrasp', mode)
         vrep.simxClearStringSignal(self.clientID, 'postgrasp', mode)
 
-    def _start_communication(self, ip, port,
+    def _start_communication(self,
+                             ip,
+                             port,
                              wait_until_start_communicationed=True,
                              do_not_reconnect_once_disconnected=False,
-                             time_out_in_ms=15000, comm_thread_cycle_in_ms=5):
+                             time_out_in_ms=15000,
+                             comm_thread_cycle_in_ms=5):
         """Requests a communication pipe with the simulator."""
 
-        clientID = vrep.simxStart(ip, port,
-                                  wait_until_start_communicationed,
+        clientID = vrep.simxStart(ip, port, wait_until_start_communicationed,
                                   do_not_reconnect_once_disconnected,
-                                  time_out_in_ms,
-                                  comm_thread_cycle_in_ms)
+                                  time_out_in_ms, comm_thread_cycle_in_ms)
         return clientID if clientID != -1 else None
 
     def _start_simulation(self):
@@ -256,7 +263,11 @@ class SimulatorInterface(object):
 
         return matrix_ht[:3].flatten().tolist()
 
-    def load_object(self, object_path, com, mass, inertia,
+    def load_object(self,
+                    object_path,
+                    com,
+                    mass,
+                    inertia,
                     use_convex_as_respondable=False):
         """Loads an object into the simulator given it's full path.
 
@@ -287,11 +298,10 @@ class SimulatorInterface(object):
         in_floats.extend([mass])
         in_floats.extend(inertia)
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'loadObject', in_ints, in_floats,
-                                        [object_path], bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'loadObject', in_ints, in_floats,
+            [object_path], bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error loading object! Return code ', r)
@@ -312,11 +322,10 @@ class SimulatorInterface(object):
         """
         frame = self._format_matrix(frame_work2palm)
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'setGripperPose', [reset_config],
-                                        frame, [], bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'setGripperPose', [reset_config],
+            frame, [], bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper pose! Return code ', r)
@@ -327,10 +336,10 @@ class SimulatorInterface(object):
         The retrieved pose is with respect to the workspace frame.
         """
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'getPoseByName', [], [], [name],
-                                        bytearray(), vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'getPoseByName', [], [], [name],
+            bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error getting pose for <%s>!' % name,
@@ -342,7 +351,8 @@ class SimulatorInterface(object):
 
         frame = self._format_matrix(frame_work2pose)
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+        r = vrep.simxCallScriptFunction(self.clientID,
+                                        'remoteApiCommandServer',
                                         vrep.sim_scripttype_childscript,
                                         'setPoseByName', [], frame, [name],
                                         bytearray(), vrep.simx_opmode_blocking)
@@ -354,11 +364,10 @@ class SimulatorInterface(object):
     def get_joint_position_by_name(self, name):
         """Given a name of a joint, get the current position"""
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'getJointPositionByName', [], [],
-                                        [name], bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'getJointPositionByName', [], [],
+            [name], bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting joint position for <%s>!' % name,
@@ -368,11 +377,10 @@ class SimulatorInterface(object):
     def set_joint_position_by_name(self, name, position):
         """Given a name of a joint, get the current position"""
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'setJointPositionByName', [],
-                                        [position], [name], bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'setJointPositionByName', [],
+            [position], [name], bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting joint position for <%s>!' % name,
@@ -384,46 +392,63 @@ class SimulatorInterface(object):
         if mode not in joint_modes:
             raise Exception('Joint mode must be in %s' % joint_modes)
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'setJointKinematicsMode', [], [],
-                                        [mode], bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'setJointKinematicsMode', [], [],
+            [mode], bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper kinematics mode.',
                             'Return code ', r)
 
-    def set_gripper_properties(self, collidable=False, measureable=False,
-                               renderable=False, detectable=False,
-                               cuttable=False, dynamic=False,
-                               respondable=False, visible=False):
+    def set_gripper_properties(self,
+                               collidable=False,
+                               measureable=False,
+                               renderable=False,
+                               detectable=False,
+                               cuttable=False,
+                               dynamic=False,
+                               respondable=False,
+                               visible=False):
         """Sets misc. parameters of the gripper model in the sim.
 
         This is used to accomplish things such as: moving the gripper without
         colliding with anything, setting it to be visible & being captured
         by the cameras, static so fingers don't move, etc ...
         """
-        props = [collidable, measureable, renderable, detectable, cuttable,
-                 dynamic, respondable, visible]
+        props = [
+            collidable, measureable, renderable, detectable, cuttable, dynamic,
+            respondable, visible
+        ]
 
         # V-REP encodes these properties as 'not_xxxxx', so we'll just invert
         # them here to make calls in the simulator straightforward
         props = [not p for p in props]
 
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+        r = vrep.simxCallScriptFunction(self.clientID,
+                                        'remoteApiCommandServer',
                                         vrep.sim_scripttype_childscript,
                                         'setGripperProperties', props, [], [],
                                         bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper properties. Return code ', r)
+            raise Exception('Error setting gripper properties. Return code ',
+                            r)
 
-    def query(self, frame_work2cam, frame_world2work=None,
-              resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
-              depth_far_clip=1.25, depth_near_clip=0.2, p_light_off=0.25,
-              p_light_mag=0.1, camera_fov=70 * np.pi / 180., reorient_up=True,
-              randomize_texture=True, randomize_colour=True,
+    def query(self,
+              frame_work2cam,
+              frame_world2work=None,
+              resolution=128,
+              rgb_near_clip=0.2,
+              rgb_far_clip=10.0,
+              depth_far_clip=1.25,
+              depth_near_clip=0.2,
+              p_light_off=0.25,
+              p_light_mag=0.1,
+              camera_fov=70 * np.pi / 180.,
+              reorient_up=True,
+              randomize_texture=True,
+              randomize_colour=True,
               randomize_lighting=True,
               texture_path=os.path.join(project_dir, 'texture.png')):
         """Queries the simulator for an image using a camera post WRT workspace.
@@ -474,17 +499,20 @@ class SimulatorInterface(object):
         in_strings = [texture_path]
 
         # Make a call to the simulator
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-                                        vrep.sim_scripttype_childscript,
-                                        'queryCamera', in_ints, in_floats,
-                                        in_strings, bytearray(),
-                                        vrep.simx_opmode_blocking)
+        r = vrep.simxCallScriptFunction(
+            self.clientID, 'remoteApiCommandServer',
+            vrep.sim_scripttype_childscript, 'queryCamera', in_ints, in_floats,
+            in_strings, bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             return None, None
 
-        images = decode_images(r[2], depth_near_clip, depth_far_clip,
-                               res_x=resolution, res_y=resolution)
+        images = decode_images(
+            r[2],
+            depth_near_clip,
+            depth_far_clip,
+            res_x=resolution,
+            res_y=resolution)
 
         # Change the grasp pose to be in the new camera frame
         return images, lib.utils.format_htmatrix(frame_work2cam)
@@ -536,8 +564,8 @@ class SimulatorInterface(object):
         # them to make sure we're not accidentally reading old values
         self._clear_signals()
 
-        self.set_gripper_properties(visible=True, dynamic=True,
-                                    collidable=True, respondable=True)
+        self.set_gripper_properties(
+            visible=True, dynamic=True, collidable=True, respondable=True)
 
         # Launch the grasp process and wait for a return value
         vrep.simxSetIntegerSignal(self.clientID, 'run_grasp_attempt',
