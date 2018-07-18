@@ -90,6 +90,8 @@ def format_htmatrix(matrix_in):
         matrix_in = np.asarray(matrix_in).reshape(3, 4)
     elif matrix_in.ndim == 1:
         matrix_in = matrix_in.reshape(3, 4)
+    elif matrix_in.shape == (3,3):
+        matrix_in = np.hstack((matrix_in, np.zeros((3,1))))
 
     ht_matrix = np.eye(4)
     ht_matrix[:3] = matrix_in
