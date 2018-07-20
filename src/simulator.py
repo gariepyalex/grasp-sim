@@ -576,6 +576,7 @@ class SimulatorInterface(object):
         postgrasp = wait_for_signal(self.clientID, 'postgrasp')
 
         # Decode the results into a dictionary
+        header = header.decode("utf-8")
         header = header.lstrip('{').rstrip('}')
         if header == '-1':
             return None, None
