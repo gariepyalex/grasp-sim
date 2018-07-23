@@ -87,7 +87,7 @@ class SimulationExperiment:
     CAMERA_HEIGHT = 0.7
     CAMERA_FOV = query_params['camera_fov']
     RANDOM_TRANSLATION = 0.3
-    GRIPPER_HEIGHT_OFFSET = 0.1
+    GRIPPER_HEIGHT_OFFSET = 0.08
     MODEL_PATH = '/mnt/datasets/dev-tensorboard/supervised-baseline_dexnet2_stn_2018-06-19 16:42:23/'
 
     def __init__(self, simulator, mesh_list, tf_session):
@@ -117,9 +117,9 @@ class SimulationExperiment:
         success = bool(int(postgrasp['all_in_contact']))
         return success
 
-    def image_relative_coord_to_meter(self, x):
+    def image_relative_coord_to_meter(self, x, gripper_height):
         x_angle = x * self.CAMERA_FOV
-        return math.tan(x_angle) * self.CAMERA_HEIGHT
+        return math.tan(x_angle) * gripper_height
 
     def parse_output(self, output):
         gripper_height = output[0, -1]
@@ -128,9 +128,8 @@ class SimulationExperiment:
 
         rectangle = self.loss.parse_network_output(output)[0]
         x, y, angle = rectangle.x, rectangle.y, rectangle.angle
-        x = self.image_relative_coord_to_meter(x)
-        y = -1 * self.image_relative_coord_to_meter(
-            y)  # y is flipped in image space
+        x = self.image_relative_coord_to_meter(x, gripper_height)
+        y = -1 * self.image_relative_coord_to_meter(y, gripper_height)  # y is flipped in image space
         angle *= -1  # y is flipped in image space
         is_positive = output[0, 0] < output[0, 1]
 
