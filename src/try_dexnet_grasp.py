@@ -13,6 +13,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import tensorflow as tf
+from tf_grasping.img_utils import to_rgb_img
 from tf_grasping.eval import load_configs, latest_checkpoint_path, EvaluationNetwork
 from tf_grasping.loss import loss_function_from_config
 from tf_grasping.data.dataset_factory import dataset_from_name
@@ -38,7 +39,7 @@ spawn_params = {
     'vrep_path':
     '/opt/V-REP_PRO_EDU_V3_5_0_Linux/vrep.sh',
     'scene_path':
-    '/home/agariepy/grasping/grasp-sim/scenes/grasp_scene_big_table.ttt',
+    '/home/agariepy/grasping/grasp-sim/scenes/grasp_scene_robotiq.ttt',
     'exit_on_stop':
     True,
     'spawn_headless':
@@ -87,7 +88,7 @@ class SimulationExperiment:
     CAMERA_HEIGHT = 0.7
     CAMERA_FOV = query_params['camera_fov']
     RANDOM_TRANSLATION = 0.3
-    GRIPPER_HEIGHT_OFFSET = 0.08
+    GRIPPER_HEIGHT_OFFSET = 0.02
     MODEL_PATH = '/mnt/datasets/dev-tensorboard/supervised-baseline_dexnet2_stn_2018-06-19 16:42:23/'
 
     def __init__(self, simulator, mesh_list, tf_session):
@@ -119,7 +120,7 @@ class SimulationExperiment:
 
     def image_relative_coord_to_meter(self, x, gripper_height):
         x_angle = x * self.CAMERA_FOV
-        return math.tan(x_angle) * gripper_height
+        return math.tan(x_angle) * self.CAMERA_HEIGHT
 
     def parse_output(self, output):
         gripper_height = output[0, -1]
@@ -142,9 +143,10 @@ class SimulationExperiment:
 
         # Compute an initial object resting pose by dropping the object from a
         # given position / height above the workspace table
-        mass = mesh.mass_properties['mass'] * 10
+        mass = mesh.mass_properties['mass'] * 100
         com = mesh.mass_properties['center_mass']
-        inertia = mesh.mass_properties['inertia'] * 5
+        inertia = mesh.mass_properties['inertia'] * 100
+        print(mass,inertia)
         self.simulator.load_object(mesh_path, com, mass, inertia.flatten())
 
         initial_pose = self.simulator.get_object_pose()
@@ -180,10 +182,16 @@ class SimulationExperiment:
         depth_image = np.expand_dims(depth_image, axis=3)
 
         raw_out = self.network.feed_forward_batch_raw(depth_image)
+        rectangle = self.loss.parse_network_output(raw_out)[0]
         x, y, angle, gripper_height, is_positive = self.parse_output(raw_out)
 
+        display_image = to_rgb_img(depth_image[0])
+        display_image = rectangle.draw_on_image(display_image)
+        plt.imshow(display_image)
+        plt.show()
+
         gripper_pose = (lib.utils.format_htmatrix(
-            lib.utils.rot_z(-np.pi / 2 + angle)).dot(
+            lib.utils.rot_z(angle)).dot(
                 lib.utils.format_htmatrix(lib.utils.rot_x(np.pi))))
         gripper_pose[0, 3] = x
         gripper_pose[1, 3] = y
