@@ -342,11 +342,33 @@ threadCollectionFunction = function()
         -- ---------------- GRASP THE OBJECT ---------------------
         print('ask grasp')
         simSetIntegerSignal('closeGrasp', 1)
-        print('waiting...')
         simWaitForSignal('grasp_done')
-        print('received done')
         simClearIntegerSignal('grasp_done')
-        simWait(3)
+
+        local p0 = simGetObjectPosition(h_gripper_palm, -1)
+        local posVelAccel = {p0[1], p0[2], p0[3], 0, 0, 0, 0, 0, 0, 0}
+        local targetPosVel = {p0[1], p0[2], p0[3] + 0.015, 0, 0, 0}
+        local accel = {0.2, 0.2, 0.1, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2}
+        local rmlHandle = simRMLPos(3, 0.001, -1, posVelAccel,
+                                    accel,
+                                    {1,1,1}, targetPosVel)
+
+        local inContact = false
+        local beginCloseTime = simGetSimulationTime()
+        local deltaTime = 0
+        local res = 0
+        while not inContact and deltaTime < 30 do
+          deltaTime = simGetSimulationTime() - beginCloseTime
+          inContact, _ = checkContacts(h_gripper_contacts, h_object)
+          if res == 0 then
+            dt = simGetSimulationTimeStep()
+            res, posVelAccel, sync = simRMLStep(rmlHandle,dt)
+            simSetObjectPosition(h_gripper_palm, -1, posVelAccel)
+          end
+          simSwitchThread()
+        end
+        simRMLRemove(rmlHandle)
+        simSwitchThread()
 
         -- Send a signal to hold the grasp while we attempt a lift
         simClearIntegerSignal('closeGrasp')
