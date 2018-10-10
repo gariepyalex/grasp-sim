@@ -10,7 +10,7 @@ from collections import namedtuple
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from dataset import G3DB
+from dataset import G3DB, KIT
 
 import tensorflow as tf
 from tf_grasping.img_utils import to_rgb_img
@@ -65,6 +65,7 @@ query_params = {
 }
 
 G3DB_PATH = '/mnt/datasets/grasping/G3DB'
+KIT_PATH = '/mnt/datasets/grasping/KIT'
 
 
 class Simulator:
@@ -72,7 +73,7 @@ class Simulator:
     CAMERA_HEIGHT = 0.7
     CAMERA_FOV = query_params['camera_fov']
     RANDOM_TRANSLATION = 0.2
-    GRIPPER_HEIGHT_OFFSET = 0.01
+    GRIPPER_HEIGHT_OFFSET = 0.04
     MODEL_PATH = '/mnt/datasets/tensorboard-stn/yolo-like-loss_dexnet2_stn_2018-09-06 16:18:21/'
 
     def __init__(self, vrep, tf_session):
@@ -130,13 +131,10 @@ class Simulator:
         x_angle = x * self.CAMERA_FOV
         return math.tan(x_angle) * self.CAMERA_HEIGHT
 
-    def parse_output(self, output, fix_gripper_height=None):
-        if fix_gripper_height:
-            gripper_height = fix_gripper_height
-        else:
-            gripper_height = output[0, -1]
-            gripper_height *= 0.03597205301927577
-            gripper_height += 0.677358905451288
+    def parse_output(self, output):
+        gripper_height = output[0, -1]
+        gripper_height *= 0.03597205301927577
+        gripper_height += 0.677358905451288
 
         rectangle = self.loss.parse_network_output(output)[0]
         x, y, angle = rectangle.x, rectangle.y, rectangle.angle
@@ -202,15 +200,17 @@ class Simulator:
         axes[0, 0].imshow(display_image)
         axes[0, 1].imshow(visualization[1][0, :, :, 0])
         axes[1, 0].imshow(visualization[2][0, :, :, 0])
-        axes[1, 1].imshow(visualization[3][0, :, :, 0])
+        axes[1, 1].imshow(visualization[3][0, :, :, 0]* 0.04414705 + 0.69519629)
         plt.show()
 
     def find_best_grasp_pose(self, depth_image):
         depth_image = depth_image[50:350, 50:350]  # Central crop
         raw_out, visualization = self.feed_forward_image(depth_image)
-        gripper_height = np.min(visualization[-1]) * 0.04414705 + 0.69519629
-        gripper_height = self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET
-        x, y, angle, rectangle, _, is_positive = self.parse_output(raw_out)
+        # gripper_height = np.min(visualization[-1]) * 0.04414705 + 0.69519629
+        # gripper_height = self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET
+        # gripper_height = 0.08
+        x, y, angle, rectangle, gripper_height, is_positive = self.parse_output(raw_out)
+        gripper_height = max(0.055, self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET)
         print(raw_out)
         self.show_visualization(depth_image, rectangle, visualization)
         return self._grasp_to_pose(x, y, angle, gripper_height)
@@ -245,7 +245,7 @@ def load_simulator(session=None):
 
 
 if __name__ == '__main__':
-    g3db = G3DB(G3DB_PATH)
+    dataset = KIT(KIT_PATH)
     with tf.Session() as session:
         simulator = load_simulator(session)
-        simulator.run_all_meshed(g3db)
+        simulator.run_all_meshed(dataset)
