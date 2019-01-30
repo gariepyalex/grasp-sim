@@ -3,10 +3,13 @@ import os
 import glob
 import trimesh
 import tempfile
+from collections import namedtuple
 
 import sys
 sys.path.append('..')
 import lib.utils
+
+Mesh = namedtuple('Mesh', ['file', 'name', 'mass', 'center_mass', 'inertia'])
 
 
 class Dataset:
@@ -32,7 +35,7 @@ class G3DB(Dataset):
           - dataset_path: path of the cloned github repo https://github.com/kleinash/G3DB
         """
         self._path = os.path.join(dataset_path, 'objects', 'grasp_meshes',
-                                 'final_mesh')
+                                  'final_mesh')
         self._object_weights = np.loadtxt(
             os.path.join(self.path, 'mesh_weights.csv'), delimiter=',')
         self._object_paths = self._load_object_paths()
@@ -54,11 +57,12 @@ class G3DB(Dataset):
         return mesh, mesh_file
 
     def __getitem__(self, i):
+        name = os.path.basename(self._object_paths[i])
         mesh, mesh_file = self._load_object(i)
         mass = self._object_weights[i]
         com = mesh.mass_properties['center_mass']
         inertia = np.eye(3) * 1e-3
-        return mesh_file, mass, com, inertia
+        return Mesh(mesh_file, name, mass, com, inertia)
 
     def _load_object_paths(self):
         def obj_number(obj_path):
@@ -72,20 +76,24 @@ class G3DB(Dataset):
 
 class KIT(Dataset):
     def __init__(self, dataset_path):
-        self._object_paths = sorted(glob.glob(os.path.join(self._path, '*.obj')))
+        self._object_paths = sorted(
+            glob.glob(os.path.join(dataset_path, '*.obj')))
 
     def __len__(self):
         return len(self._object_paths)
 
     def __getitem__(self, i):
-        mesh = trimesh.load_mesh(mesh_path)
+        name = os.path.basename(self._object_paths[i])
+        mesh = trimesh.load_mesh(self._object_paths[i])
+        # mesh.vertices *= 1.75
+        mesh.vertices *= 1.5
         mesh.vertices -= mesh.center_mass
         mesh_file = self.to_mesh_tempfile(mesh)
 
         mass = 1.0
         center_mass = mesh.center_mass
         inertia = np.eye(3) * 1e-3
-        return mesh_file, mass, center_mass, inertia
+        return Mesh(mesh_file, name, mass, center_mass, inertia)
 
 
 if __name__ == '__main__':
