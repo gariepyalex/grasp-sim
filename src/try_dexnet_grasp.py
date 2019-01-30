@@ -1,11 +1,14 @@
+import argparse
 import os
 import itertools
+import uuid
 import sys
 import glob
 import h5py
 import numpy as np
 import random
 import math
+import pickle
 from collections import namedtuple
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -14,10 +17,7 @@ from dataset import G3DB, KIT
 
 import tensorflow as tf
 from tf_grasping.img_utils import to_rgb_img
-from tf_grasping.eval import load_configs, latest_checkpoint_path
-from tf_grasping.loss import loss_function_from_config
-from tf_grasping.data.dataset_factory import dataset_from_name
-from tf_grasping.net.models import model_from_config
+from tf_grasping.inference import load_best_network
 
 sys.path.append('..')
 
@@ -67,14 +67,19 @@ query_params = {
 G3DB_PATH = '/mnt/datasets/grasping/G3DB'
 KIT_PATH = '/mnt/datasets/grasping/KIT'
 
+GraspAttempt = namedtuple('GraspAttempt', [
+    'object_pose', 'grasp_pose', 'image', 'success', 'raw_net_output',
+    'mesh_name'
+])
+
 
 class Simulator:
     OBJET_DROP_HEIGHT = 0.5
     CAMERA_HEIGHT = 0.7
     CAMERA_FOV = query_params['camera_fov']
-    RANDOM_TRANSLATION = 0.2
+    RANDOM_TRANSLATION = 0.1
     GRIPPER_HEIGHT_OFFSET = 0.04
-    MODEL_PATH = '/mnt/datasets/tensorboard-stn/yolo-like-loss_dexnet2_stn_2018-09-06 16:18:21/'
+    MODEL_PATH = '/mnt/datasets/tensorboard-stn/trying-old-schedule_dexnet2_stn_2019-01-27 12:23:33/'
 
     def __init__(self, vrep, tf_session):
         self.vrep = vrep
@@ -83,9 +88,7 @@ class Simulator:
             os.makedirs(config_output_collected_dir)
 
         # Load tf model
-        configs = load_configs(self.MODEL_PATH)
-        self._init_model(configs)
-        self.loss = loss_function_from_config(1, configs['loss'], None)
+        self._init_model(self.MODEL_PATH)
 
     @property
     def _camera_pose(self):
@@ -95,25 +98,14 @@ class Simulator:
         pose[2, 3] = self.CAMERA_HEIGHT
         return pose
 
-    def _init_model(self, configs):
-        self.img_placeholder = tf.placeholder(
-            tf.float32, shape=[1, 300, 300, 1])
-        self.model = model_from_config(configs['model'])
-        self.net_out = self.model(
-            self.img_placeholder, output_size=9, is_training=False)
-
-        self.visualization = self.model.visualize_transforms_batch()
-
-        checkpoint_path = latest_checkpoint_path(
-            configs['file']['model_directory'])
-        self._load_checkpoint(checkpoint_path)
+    def _init_model(self, path):
+        img_shape = [1, 224, 224, 1]
+        self.inference = load_best_network(self.tf_session, path, img_shape)
 
     def feed_forward_image(self, img):
         img = np.expand_dims(img, axis=0)
         img = np.expand_dims(img, axis=3)
-
-        return self.tf_session.run([self.net_out, self.visualization],
-                                   feed_dict={self.img_placeholder: img})
+        return self.inference.feed_forward_batch(img)[0]
 
     def _load_checkpoint(self, checkpoint_path):
         saver = tf.train.Saver()
@@ -130,21 +122,6 @@ class Simulator:
         x *= 3 / 4
         x_angle = x * self.CAMERA_FOV
         return math.tan(x_angle) * self.CAMERA_HEIGHT
-
-    def parse_output(self, output):
-        gripper_height = output[0, -1]
-        gripper_height *= 0.03597205301927577
-        gripper_height += 0.677358905451288
-
-        rectangle = self.loss.parse_network_output(output)[0]
-        x, y, angle = rectangle.x, rectangle.y, rectangle.angle
-        x = self.image_relative_coord_to_meter(x)
-        y = -1 * self.image_relative_coord_to_meter(
-            y)  # y is flipped in image space
-        angle *= -1  # y is flipped in image space
-        is_positive = output[0, 0] < output[0, 1]
-
-        return x, y, angle, rectangle, gripper_height, is_positive
 
     def move_gripper(self, pose_matrix):
         self.vrep.set_gripper_pose(pose_matrix)
@@ -185,7 +162,12 @@ class Simulator:
         depth_image = images[0, 3]
         return depth_image
 
-    def _grasp_to_pose(self, x, y, angle, height):
+    def _grasp_to_pose(self, rectangle, height):
+        x, y, angle = rectangle.x, rectangle.y, rectangle.angle
+        x = self.image_relative_coord_to_meter(x)
+        y = -1 * self.image_relative_coord_to_meter(
+            y)  # y is flipped in image space
+        angle *= -1  # y is flipped in image space
         gripper_pose = (lib.utils.format_htmatrix(lib.utils.rot_z(angle)).dot(
             lib.utils.format_htmatrix(lib.utils.rot_x(np.pi))))
         gripper_pose[0, 3] = x
@@ -193,48 +175,69 @@ class Simulator:
         gripper_pose[2, 3] = height
         return gripper_pose
 
-    def show_visualization(self, depth_image, rectangle, visualization):
+    def show_visualization(self, depth_image, rectangle):
         display_image = to_rgb_img(depth_image)
         display_image = rectangle.draw_on_image(display_image)
-        fig, axes = plt.subplots(2, 2)
-        axes[0, 0].imshow(display_image)
-        axes[0, 1].imshow(visualization[1][0, :, :, 0])
-        axes[1, 0].imshow(visualization[2][0, :, :, 0])
-        axes[1, 1].imshow(visualization[3][0, :, :, 0]* 0.04414705 + 0.69519629)
+        plt.imshow(display_image)
         plt.show()
 
-    def find_best_grasp_pose(self, depth_image):
-        depth_image = depth_image[50:350, 50:350]  # Central crop
-        raw_out, visualization = self.feed_forward_image(depth_image)
-        # gripper_height = np.min(visualization[-1]) * 0.04414705 + 0.69519629
-        # gripper_height = self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET
-        # gripper_height = 0.08
-        x, y, angle, rectangle, gripper_height, is_positive = self.parse_output(raw_out)
-        gripper_height = max(0.055, self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET)
-        print(raw_out)
-        self.show_visualization(depth_image, rectangle, visualization)
-        return self._grasp_to_pose(x, y, angle, gripper_height)
+    def find_best_grasp_pose(self, depth_image, debug):
+        depth_image = depth_image[88:312, 88:312]  # Central crop
+        out = self.feed_forward_image(depth_image)
+        raw_out = out['raw']
+        rectangle = out['rectangle']
+        gripper_height = out['gripper_height']
 
-    def grasp_mesh(self, mesh_file, mass, com, inertia):
-        self.drop_object(mesh_file, mass, com, inertia)
+        # gripper_height = max(
+        #     0.055,
+        #     self.CAMERA_HEIGHT - gripper_height + self.GRIPPER_HEIGHT_OFFSET)
+        gripper_height = 0.065
+        if debug:
+            print(raw_out)
+            self.show_visualization(depth_image, rectangle)
+        return self._grasp_to_pose(rectangle, gripper_height), raw_out
+
+    def grasp_mesh(self, mesh, debug=True):
+        self.drop_object(mesh.file, mesh.mass, mesh.center_mass, mesh.inertia)
         self.random_object_pose()
         self.reset_gripper_pose()
 
+        object_pose = self.object_pose
         depth_image = self.capture_depth_image()
-        gripper_pose = self.find_best_grasp_pose(depth_image)
+        gripper_pose, raw_out = self.find_best_grasp_pose(depth_image, debug)
         self.move_gripper(gripper_pose)
-        lift_result = self.try_lift()
-        return lift_result
+        success = self.try_lift()
+        attempt = GraspAttempt(
+            grasp_pose=gripper_pose,
+            object_pose=object_pose,
+            image=depth_image,
+            raw_net_output=raw_out,
+            success=success,
+            mesh_name=mesh.name)
+        return attempt
 
-    def run_all_meshed(self, dataset):
-        results = []
-        random_indices = np.arange(len(dataset))
-        np.random.shuffle(random_indices)
-        for i in random_indices:
-            is_positive = self.grasp_mesh(*dataset[i])
-            print('LIFT WORKED: %s' % str(is_positive))
-            results.append(is_positive)
-        return results
+    def save_attempt(self, output_dir, attempt):
+        if not os.path.exists(output_dir):
+            os.mkdir(output_dir)
+        filename = '%s_%s.pkl' % (attempt.mesh_name, str(uuid.uuid1()))
+        print(os.path.join(output_dir, filename))
+        with open(os.path.join(output_dir, filename), 'wb') as f:
+            pickle.dump(attempt, f)
+
+    def run_all_meshed(self, dataset, output_dir, debug, shuffle=False):
+        n_success = 0
+        indices = np.arange(len(dataset))
+        if shuffle:
+            np.random.shuffle(indices)
+        for i in indices:
+            attempt = self.grasp_mesh(dataset[i], debug)
+            if attempt.success:
+                n_success += 1
+            if debug:
+                print('LIFT WORKED: %s' % str(attempt.success))
+            if output_dir:
+                self.save_attempt(output_dir, attempt)
+        return n_success / len(dataset)
 
 
 def load_simulator(session=None):
@@ -245,7 +248,14 @@ def load_simulator(session=None):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_dir')
+    parser.add_argument('--debug', action='store_true')
+    args = parser.parse_args()
+
     dataset = KIT(KIT_PATH)
     with tf.Session() as session:
         simulator = load_simulator(session)
-        simulator.run_all_meshed(dataset)
+        accuracy = simulator.run_all_meshed(
+            dataset, args.output_dir, debug=args.debug)
+        print('Accuracy: ' + str(round(accuracy, 4) * 100) + '%')
